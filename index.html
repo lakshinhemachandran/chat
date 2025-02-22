@@ -154,7 +154,7 @@
             margin: 5px 0;
             font-family: monospace;
             font-size: 1em;
-            white-space: pre-wrap;
+            white-space: pre;
         }
 
         #error-message {
@@ -195,42 +195,73 @@
         <h1>Bharwat Chat Room</h1>
         <pre id="current-time"></pre>
         <pre id="current-user"></pre>
-        <!-- Keep the rest of the HTML the same -->
+        <div id="login-section">
+            <form id="login-form">
+                <input type="text" id="username" placeholder="Username" required>
+                <input type="password" id="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+            <div id="error-message"></div>
+        </div>
+        <div id="chat-section" style="display: none;">
+            <div id="messages"></div>
+            <div id="command-suggestions" style="display: none;"></div>
+            <form id="chat-form">
+                <input type="text" id="message-input" placeholder="Type a message... (Type / for commands)" autocomplete="off">
+                <button type="submit">Send</button>
+            </form>
+        </div>
     </div>
+    <footer>
+        Copyright © 2024 <a href="http://www.quantumdev.rf.gd" target="_blank">QuantumDev</a>
+    </footer>
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bharwat Chat Room</title>
+    <!-- Keep all your previous CSS -->
+</head>
+<body>
+    <div class="container">
+        <h1>Bharwat Chat Room</h1>
+        <pre id="current-time"></pre>
+        <pre id="current-user"></pre>
+        <div id="login-section">
+            <form id="login-form">
+                <input type="text" id="username" placeholder="Username" required>
+                <input type="password" id="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+            <div id="error-message"></div>
+        </div>
+        <div id="chat-section" style="display: none;">
+            <div id="messages"></div>
+            <div id="command-suggestions" style="display: none;"></div>
+            <form id="chat-form">
+                <input type="text" id="message-input" placeholder="Type a message... (Type / for commands)" autocomplete="off">
+                <button type="submit">Send</button>
+            </form>
+        </div>
+    </div>
+    <footer>
+        Copyright © 2024 <a href="http://www.quantumdev.rf.gd" target="_blank">QuantumDev</a>
+    </footer>
 
     <script src='https://cdn.scaledrone.com/scaledrone.min.js'></script>
     <script>
         const CHANNEL_ID = 'Put2P1gNkzTYmqJN'; // Your Scaledrone channel ID
-        let drone;
-        
+        let drone = null;
+        let room = null;
+
         const users = {
             'lakshinhemachandran': 'lakshin1403',
             'lakshintest': 'test'
         };
 
-        const commands = {
-            '/help': 'Show all available commands',
-            '/announce': 'Make a system announcement',
-            '/clear': 'Clear the chat history',
-            '/kick': 'Kick a user from the chat',
-            '/ban': 'Ban a user from the chat',
-            '/unban': 'Unban a user from the chat',
-            '/timeout': 'Timeout a user for a specific duration',
-            '/whois': 'Get info about a user',
-            '/time': 'Show current server time'
-        };
-
         let currentUser = '';
         let bannedUsers = new Set(JSON.parse(localStorage.getItem('bannedUsers') || '[]'));
-        let timedOutUsers = new Map(JSON.parse(localStorage.getItem('timedOutUsers') || '[]'));
-
-        function saveBannedUsers() {
-            localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
-        }
-
-        function saveTimedOutUsers() {
-            localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
-        }
 
         function updateDateTime() {
             const now = new Date();
@@ -254,9 +285,12 @@
         setInterval(updateDateTime, 1000);
         updateDateTime();
 
-        function initializeScaledrone() {
+        function connectToScaledrone() {
             drone = new Scaledrone(CHANNEL_ID, {
-                data: { username: currentUser }
+                data: {
+                    username: currentUser,
+                    isAdmin: currentUser === 'lakshinhemachandran'
+                }
             });
 
             drone.on('open', error => {
@@ -264,50 +298,32 @@
                     console.error(error);
                     return;
                 }
-                const room = drone.subscribe('chat-room');
+                room = drone.subscribe('observable-room');
 
                 room.on('open', error => {
                     if (error) {
                         console.error(error);
-                        return;
                     }
-                    addMessage('System', `${currentUser} joined the chat`, 'system-message');
                 });
 
-                room.on('message', message => {
-                    const {data, member} = message;
-                    if (typeof data === 'object') {
-                        handleSystemMessage(data);
-                    } else {
-                        addMessage(member.clientData.username, data);
+                room.on('data', (data, member) => {
+                    if (data.type === 'message') {
+                        addMessage(member.clientData.username, data.text);
+                    } else if (data.type === 'ban') {
+                        handleBan(data.target);
                     }
                 });
             });
         }
 
-        function handleSystemMessage(data) {
-            switch(data.type) {
-                case 'ban':
-                    bannedUsers.add(data.target);
-                    saveBannedUsers();
-                    if (data.target === currentUser) {
-                        window.location.reload();
-                    }
-                    break;
-                case 'unban':
-                    bannedUsers.delete(data.target);
-                    saveBannedUsers();
-                    break;
-                case 'timeout':
-                    timedOutUsers.set(data.target, Date.now() + (data.duration * 60000));
-                    saveTimedOutUsers();
-                    if (data.target === currentUser) {
-                        window.location.reload();
-                    }
-                    break;
-                case 'clear':
-                    document.getElementById('messages').innerHTML = '';
-                    break;
+        function handleBan(target) {
+            bannedUsers.add(target);
+            localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
+            addMessage('System', `${target} has been banned`, 'system-message');
+            
+            if (currentUser === target) {
+                alert('You have been banned from the chat');
+                window.location.reload();
             }
         }
 
@@ -322,98 +338,52 @@
                 return;
             }
 
-            if (timedOutUsers.has(username)) {
-                const timeoutEnd = timedOutUsers.get(username);
-                if (Date.now() < timeoutEnd) {
-                    const remainingMinutes = Math.ceil((timeoutEnd - Date.now()) / 60000);
-                    document.getElementById('error-message').textContent = 
-                        `You are in timeout for ${remainingMinutes} more minutes`;
-                    document.getElementById('error-message').style.display = 'block';
-                    return;
-                } else {
-                    timedOutUsers.delete(username);
-                    saveTimedOutUsers();
-                }
-            }
-
             if (users[username] && users[username] === password) {
                 currentUser = username;
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('chat-section').style.display = 'block';
                 document.getElementById('error-message').style.display = 'none';
-                initializeScaledrone();
+                connectToScaledrone();
             } else {
                 document.getElementById('error-message').textContent = 'Invalid username or password';
                 document.getElementById('error-message').style.display = 'block';
             }
         });
 
-        // Keep the command suggestion code the same
+        document.getElementById('chat-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const messageInput = document.getElementById('message-input');
+            const text = messageInput.value.trim();
+            
+            if (text) {
+                if (text.startsWith('/')) {
+                    handleCommand(text);
+                } else {
+                    room.publish({
+                        type: 'message',
+                        text: text
+                    });
+                }
+                messageInput.value = '';
+            }
+        });
 
         function handleCommand(message) {
             const args = message.split(' ');
             const command = args[0].toLowerCase();
             const isAdmin = currentUser === 'lakshinhemachandran';
 
-            switch(command) {
-                case '/ban':
-                    if (isAdmin) {
-                        const target = args[1];
-                        if (target && target !== 'lakshinhemachandran') {
-                            drone.publish({
-                                room: 'chat-room',
-                                message: {
-                                    type: 'ban',
-                                    target: target,
-                                    by: currentUser
-                                }
-                            });
-                            addMessage('System', `${target} has been banned by admin`, 'system-message');
-                        }
-                    }
-                    return true;
-
-                case '/unban':
-                    if (isAdmin) {
-                        const target = args[1];
-                        drone.publish({
-                            room: 'chat-room',
-                            message: {
-                                type: 'unban',
-                                target: target,
-                                by: currentUser
-                            }
-                        });
-                        addMessage('System', `${target} has been unbanned by admin`, 'system-message');
-                    }
-                    return true;
-
-                // Add similar real-time handling for other commands...
-
-                default:
-                    return false;
-            }
-        }
-
-        document.getElementById('chat-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const messageInput = document.getElementById('message-input');
-            const message = messageInput.value.trim();
-            
-            if (message) {
-                if (message.startsWith('/')) {
-                    if (!handleCommand(message)) {
-                        addMessage('System', 'Unknown command. Type /help for available commands.', 'system-message');
-                    }
-                } else if (!bannedUsers.has(currentUser) && !timedOutUsers.has(currentUser)) {
-                    drone.publish({
-                        room: 'chat-room',
-                        message: message
+            if (command === '/ban' && isAdmin) {
+                const target = args[1];
+                if (target && target !== 'lakshinhemachandran') {
+                    room.publish({
+                        type: 'ban',
+                        target: target
                     });
                 }
-                messageInput.value = '';
             }
-        });
+            // Add other commands as needed
+        }
 
         function addMessage(user, text, className = '') {
             const now = new Date();
