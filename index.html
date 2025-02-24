@@ -121,6 +121,7 @@
             border-radius: 8px;
             background: #f8f9fa;
             word-wrap: break-word;
+            position: relative;
         }
 
         .admin-message {
@@ -195,6 +196,49 @@
             padding: 2px 4px;
             border-radius: 4px;
         }
+
+        .command-list, .user-list {
+            position: absolute;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: var(--box-shadow);
+        }
+
+        .command-list__item, .user-list__item {
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        .command-list__item:hover, .user-list__item:hover {
+            background: var(--background-color);
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--error-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .crown {
+            color: gold;
+            font-size: 1.2em;
+            margin-right: 5px;
+        }
     </style>
 </head>
 <body>
@@ -215,7 +259,9 @@
             <div class="members-list">-</div>
             <div class="messages"></div>
             <form class="message-form" onsubmit="return false;">
-                <input class="message-form__input" placeholder="Type a message... (Type / for commands)" type="text"/>
+                <input class="message-form__input" id="message-input" placeholder="Type a message... (Type / for commands)" type="text"/>
+                <div class="command-list" id="command-list" style="display: none;"></div>
+                <div class="user-list" id="user-list" style="display: none;"></div>
                 <button type="submit">Send</button>
             </form>
         </div>
@@ -258,6 +304,8 @@
         messages: document.querySelector('.messages'),
         input: document.querySelector('.message-form__input'),
         form: document.querySelector('.message-form'),
+        commandList: document.getElementById('command-list'),
+        userList: document.getElementById('user-list'),
     };
 
     if ('Notification' in window) {
@@ -491,6 +539,8 @@
     function addSystemMessage(text) {
         addMessageToListDOM(text, { clientData: { username: 'System' } });
     }
+</script>
+<script>
     function handleCommand(text) {
         const args = text.split(' ');
         const command = args[0].toLowerCase();
@@ -644,6 +694,52 @@
         }
     }
 
+    function showCommandList() {
+        const commandList = DOM.commandList;
+        commandList.innerHTML = '';
+        Object.keys(commands).forEach(cmd => {
+            const item = document.createElement('div');
+            item.className = 'command-list__item';
+            item.textContent = cmd;
+            item.onclick = () => {
+                DOM.input.value = cmd + ' ';
+                commandList.style.display = 'none';
+                DOM.input.focus();
+            };
+            commandList.appendChild(item);
+        });
+        commandList.style.display = 'block';
+    }
+
+    function showUserList() {
+        const userList = DOM.userList;
+        userList.innerHTML = '';
+        members.forEach(member => {
+            const item = document.createElement('div');
+            item.className = 'user-list__item';
+            item.textContent = `@${member.clientData.username}`;
+            item.onclick = () => {
+                DOM.input.value += `${item.textContent} `;
+                userList.style.display = 'none';
+                DOM.input.focus();
+            };
+            userList.appendChild(item);
+        });
+        userList.style.display = 'block';
+    }
+
+    DOM.input.addEventListener('input', (e) => {
+        const value = e.target.value.trim();
+        if (value === '/') {
+            showCommandList();
+        } else if (value.endsWith('@')) {
+            showUserList();
+        } else {
+            DOM.commandList.style.display = 'none';
+            DOM.userList.style.display = 'none';
+        }
+    });
+
     DOM.form.addEventListener('submit', () => {
         const value = DOM.input.value.trim();
         if (value === '') return;
@@ -659,5 +755,3 @@
         DOM.input.value = '';
     });
 </script>
-</body>
-</html>
