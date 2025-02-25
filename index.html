@@ -124,6 +124,10 @@
             position: relative;
         }
 
+        .message:hover .message-actions {
+            opacity: 1;
+        }
+
         .admin-message {
             background: #ffe8e8;
             border-left: 4px solid #e74c3c;
@@ -133,6 +137,24 @@
             background: #e3f2fd;
             border-left: 4px solid #2196f3;
             font-weight: bold;
+        }
+
+        .message-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .message-actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--primary-color);
         }
 
         .message-form {
@@ -216,29 +238,6 @@
         .command-list__item:hover, .user-list__item:hover {
             background: var(--background-color);
         }
-
-        .delete-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: var(--error-color);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        .crown {
-            color: gold;
-            font-size: 1.2em;
-            margin-right: 5px;
-        }
     </style>
 </head>
 <body>
@@ -269,489 +268,887 @@
     <footer>
         Copyright © 2024 <a href="http://www.quantumdev.rf.gd" target="_blank">QuantumDev</a>
     </footer>
-    <script>
+	<script>
     const CHANNEL_ID = 'vf0ddTar6tKzgFId';
-    const CHAT_HISTORY_KEY = 'chatHistory';
+const CHAT_HISTORY_KEY = 'chatHistory';
 
-    const users = {
-        'lakshinh': 'lakshin1403',
-        'shreyasb': 'shreyas13',
-        'arnavm': 'arnav12',
-        'abana': 'aban13',
-        'kalabk': 'kalab13'
+const users = {
+    'lakshinh': 'lakshin1403',
+    'shreyasb': 'shreyas13',
+    'arnavm': 'arnav12',
+    'abana': 'aban13',
+    'kalabk': 'kalab13'
+};
+
+const commands = {
+    '/help': 'Show all available commands',
+    '/clear': 'Clear the chat history',
+    '/ban': 'Ban a user from the chat',
+    '/unban': 'Unban a user from the chat',
+    '/timeout': 'Timeout user (e.g., 1d, 1hr20m, 20m, 20s)',
+    '/untimeout': 'Remove timeout from user',
+    '/announce': 'Make a system announcement',
+    '/everyone': 'Mention everyone in the chat'
+};
+
+let currentUser = '';
+let drone = null;
+let members = [];
+let bannedUsers = new Set(JSON.parse(localStorage.getItem('bannedUsers') || '[]'));
+let timedOutUsers = new Map(JSON.parse(localStorage.getItem('timedOutUsers') || '[]'));
+let chatHistory = JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY) || '[]');
+
+const DOM = {
+    membersCount: document.querySelector('.members-count'),
+    membersList: document.querySelector('.members-list'),
+    messages: document.querySelector('.messages'),
+    input: document.querySelector('.message-form__input'),
+    form: document.querySelector('.message-form'),
+    commandList: document.getElementById('command-list'),
+    userList: document.getElementById('user-list'),
+};
+
+if ('Notification' in window) {
+    Notification.requestPermission();
+}
+
+function getFormattedTime() {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(now.getUTCDate()).padStart(2, '0');
+    const hours = String(now.getUTCHours()).padStart(2, '0');
+    const minutes = String(now.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(now.getUTCSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function updateDateTime() {
+    const timeStr = getFormattedTime();
+    document.getElementById('current-time').textContent = 
+        `Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): ${timeStr}\n`;
+    document.getElementById('current-user').textContent = 
+        `Current User's Login: ${currentUser} ${currentUser === 'lakshinh' ? '👑' : ''}\n`;
+}
+
+function addToHistory(text, member) {
+    const messageObj = {
+        text: text,
+        username: member.clientData.username,
+        timestamp: getFormattedTime()
     };
-
-    const commands = {
-        '/help': 'Show all available commands',
-        '/clear': 'Clear the chat history',
-        '/ban': 'Ban a user from the chat',
-        '/unban': 'Unban a user from the chat',
-        '/timeout': 'Timeout user (e.g., 1d, 1hr20m, 20m, 20s)',
-        '/untimeout': 'Remove timeout from user',
-        '/announce': 'Make a system announcement'
-    };
-
-    let currentUser = '';
-    let drone = null;
-    let members = [];
-    let bannedUsers = new Set(JSON.parse(localStorage.getItem('bannedUsers') || '[]'));
-    let timedOutUsers = new Map(JSON.parse(localStorage.getItem('timedOutUsers') || '[]'));
-    let chatHistory = JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY) || '[]');
-
-    const DOM = {
-        membersCount: document.querySelector('.members-count'),
-        membersList: document.querySelector('.members-list'),
-        messages: document.querySelector('.messages'),
-        input: document.querySelector('.message-form__input'),
-        form: document.querySelector('.message-form'),
-        commandList: document.getElementById('command-list'),
-        userList: document.getElementById('user-list'),
-    };
-
-    if ('Notification' in window) {
-        Notification.requestPermission();
+    chatHistory.push(messageObj);
+    if (chatHistory.length > 100) {
+        chatHistory.shift();
     }
+    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
+}
 
-    function getFormattedTime() {
-        const now = new Date();
-        const year = now.getUTCFullYear();
-        const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(now.getUTCDate()).padStart(2, '0');
-        const hours = String(now.getUTCHours()).padStart(2, '0');
-        const minutes = String(now.getUTCMinutes()).padStart(2, '0');
-        const seconds = String(now.getUTCSeconds()).padStart(2, '0');
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    }
-
-    function updateDateTime() {
-        const timeStr = getFormattedTime();
-        document.getElementById('current-time').textContent = 
-            `Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): ${timeStr}\n`;
-        document.getElementById('current-user').textContent = 
-            `Current User's Login: ${currentUser}\n`;
-    }
-
-    function addToHistory(text, member) {
-        const messageObj = {
-            text: text,
-            username: member.clientData.username,
-            timestamp: getFormattedTime()
+function loadChatHistory() {
+    chatHistory.forEach(msg => {
+        const fakeUser = {
+            clientData: {
+                username: msg.username
+            }
         };
-        chatHistory.push(messageObj);
-        if (chatHistory.length > 100) {
-            chatHistory.shift();
+        addMessageToListDOM(msg.text, fakeUser);
+    });
+    DOM.messages.scrollTop = DOM.messages.scrollHeight;
+}
+
+function parseTimeString(timeStr) {
+    const regex = /^(?:(\d+)d)?(?:(\d+)hr)?(?:(\d+)m)?(?:(\d+)s)?$/;
+    const matches = timeStr.match(regex);
+    
+    if (!matches) return null;
+    
+    const days = parseInt(matches[1]) || 0;
+    const hours = parseInt(matches[2]) || 0;
+    const minutes = parseInt(matches[3]) || 0;
+    const seconds = parseInt(matches[4]) || 0;
+    
+    const totalMs = (days * 24 * 60 * 60 * 1000) + 
+                   (hours * 60 * 60 * 1000) + 
+                   (minutes * 60 * 1000) + 
+                   (seconds * 1000);
+    
+    return totalMs > 0 ? totalMs : null;
+}
+
+function formatRemainingTime(ms) {
+    const seconds = Math.floor((ms / 1000) % 60);
+    const minutes = Math.floor((ms / (1000 * 60)) % 60);
+    const hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
+    const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+    
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}hr`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0) parts.push(`${seconds}s`);
+    
+    return parts.join('');
+}
+
+function cleanupTimeouts() {
+    const now = Date.now();
+    let changed = false;
+    timedOutUsers.forEach((expiry, user) => {
+        if (now >= expiry) {
+            timedOutUsers.delete(user);
+            changed = true;
         }
-        localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
+    });
+    if (changed) {
+        localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
+    }
+}
+setInterval(cleanupTimeouts, 1000);
+setInterval(updateDateTime, 1000);
+updateDateTime();
+
+document.getElementById('login-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    const timeoutExpiry = timedOutUsers.get(username);
+    if (timeoutExpiry && Date.now() < timeoutExpiry) {
+        const remaining = timeoutExpiry - Date.now();
+        const formattedTime = formatRemainingTime(remaining);
+        document.getElementById('error-message').textContent = 
+            `You are timed out for ${formattedTime}`;
+        document.getElementById('error-message').style.display = 'block';
+        return;
     }
 
-    function loadChatHistory() {
-        chatHistory.forEach(msg => {
-            const fakeUser = {
-                clientData: {
-                    username: msg.username
-                }
-            };
-            addMessageToListDOM(msg.text, fakeUser);
-        });
-        DOM.messages.scrollTop = DOM.messages.scrollHeight;
+    if (bannedUsers.has(username)) {
+        document.getElementById('error-message').textContent = 'You are banned from the chat';
+        document.getElementById('error-message').style.display = 'block';
+        return;
     }
 
-    function parseTimeString(timeStr) {
-        const regex = /^(?:(\d+)d)?(?:(\d+)hr)?(?:(\d+)m)?(?:(\d+)s)?$/;
-        const matches = timeStr.match(regex);
-        
-        if (!matches) return null;
-        
-        const days = parseInt(matches[1]) || 0;
-        const hours = parseInt(matches[2]) || 0;
-        const minutes = parseInt(matches[3]) || 0;
-        const seconds = parseInt(matches[4]) || 0;
-        
-        const totalMs = (days * 24 * 60 * 60 * 1000) + 
-                       (hours * 60 * 60 * 1000) + 
-                       (minutes * 60 * 1000) + 
-                       (seconds * 1000);
-        
-        return totalMs > 0 ? totalMs : null;
+    if (users[username] && users[username] === password) {
+        currentUser = username;
+        document.getElementById('login-section').style.display = 'none';
+        document.getElementById('chat-section').style.display = 'block';
+        document.getElementById('error-message').style.display = 'none';
+        initScaledrone();
+        loadChatHistory();
+    } else {
+        document.getElementById('error-message').textContent = 'Invalid username or password';
+        document.getElementById('error-message').style.display = 'block';
     }
-
-    function formatRemainingTime(ms) {
-        const seconds = Math.floor((ms / 1000) % 60);
-        const minutes = Math.floor((ms / (1000 * 60)) % 60);
-        const hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
-        const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-        
-        const parts = [];
-        if (days > 0) parts.push(`${days}d`);
-        if (hours > 0) parts.push(`${hours}hr`);
-        if (minutes > 0) parts.push(`${minutes}m`);
-        if (seconds > 0) parts.push(`${seconds}s`);
-        
-        return parts.join('');
-    }
-
-    function cleanupTimeouts() {
-        const now = Date.now();
-        let changed = false;
-        timedOutUsers.forEach((expiry, user) => {
-            if (now >= expiry) {
-                timedOutUsers.delete(user);
-                changed = true;
-            }
-        });
-        if (changed) {
-            localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
-        }
-    }
-    setInterval(cleanupTimeouts, 1000);
-    setInterval(updateDateTime, 1000);
-    updateDateTime();
-
-    document.getElementById('login-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-
-        const timeoutExpiry = timedOutUsers.get(username);
-        if (timeoutExpiry && Date.now() < timeoutExpiry) {
-            const remaining = timeoutExpiry - Date.now();
-            const formattedTime = formatRemainingTime(remaining);
-            document.getElementById('error-message').textContent = 
-                `You are timed out for ${formattedTime}`;
-            document.getElementById('error-message').style.display = 'block';
-            return;
-        }
-
-        if (bannedUsers.has(username)) {
-            document.getElementById('error-message').textContent = 'You are banned from the chat';
-            document.getElementById('error-message').style.display = 'block';
-            return;
-        }
-
-        if (users[username] && users[username] === password) {
-            currentUser = username;
-            document.getElementById('login-section').style.display = 'none';
-            document.getElementById('chat-section').style.display = 'block';
-            document.getElementById('error-message').style.display = 'none';
-            initScaledrone();
-            loadChatHistory();
-        } else {
-            document.getElementById('error-message').textContent = 'Invalid username or password';
-            document.getElementById('error-message').style.display = 'block';
+});
+function initScaledrone() {
+    drone = new ScaleDrone(CHANNEL_ID, {
+        data: {
+            username: currentUser,
+            color: getRandomColor()
         }
     });
 
-    function initScaledrone() {
-        drone = new ScaleDrone(CHANNEL_ID, {
-            data: {
-                username: currentUser,
-                color: getRandomColor()
-            }
-        });
+    drone.on('open', error => {
+        if (error) return console.error(error);
 
-        drone.on('open', error => {
+        const room = drone.subscribe('observable-room');
+
+        room.on('open', error => {
             if (error) return console.error(error);
-
-            const room = drone.subscribe('observable-room');
-
-            room.on('open', error => {
-                if (error) return console.error(error);
-            });
-
-            room.on('members', m => {
-                members = m;
-                updateMembersDOM();
-            });
-
-            room.on('member_join', member => {
-                members.push(member);
-                updateMembersDOM();
-            });
-
-            room.on('member_leave', ({id}) => {
-                const index = members.findIndex(member => member.id === id);
-                members.splice(index, 1);
-                updateMembersDOM();
-            });
-
-            room.on('data', (text, member) => {
-                if (member) {
-                    if (text.type === 'command') {
-                        handleRemoteCommand(text, member);
-                    } else {
-                        addMessageToListDOM(text, member);
-                        addToHistory(text, member);
-                        
-                        if (typeof text === 'string' && text.includes(`@${currentUser}`)) {
-                            notifyUser(text, member.clientData.username);
-                        }
-                    }
-                }
-            });
         });
-    }
 
-    function notifyUser(message, fromUser) {
-        if (Notification.permission === "granted") {
-            new Notification("You were mentioned!", {
-                body: `${fromUser}: ${message}`
-            });
-        }
-    }
-
-    function getRandomColor() {
-        return '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16);
-    }
-
-    function createMemberElement(member) {
-        const el = document.createElement('div');
-        el.appendChild(document.createTextNode(member.clientData.username));
-        el.className = 'member';
-        el.style.color = member.clientData.color;
-        return el;
-    }
-
-    function updateMembersDOM() {
-        DOM.membersCount.innerText = `${members.length} users in room:`;
-        DOM.membersList.innerHTML = '';
-        members.forEach(member =>
-            DOM.membersList.appendChild(createMemberElement(member))
-        );
-    }
-
-    function createMessageElement(text, member) {
-        const timeStr = getFormattedTime();
-        const el = document.createElement('div');
-        el.className = member.clientData.username === 'lakshinh' ? 'message admin-message' : 'message';
-        el.innerHTML = `<strong>${member.clientData.username}</strong> (${timeStr}): ${text}`;
-        return el;
-    }
-
-    function addMessageToListDOM(text, member) {
-        const el = DOM.messages;
-        const wasTop = el.scrollTop === el.scrollHeight - el.clientHeight;
-        el.appendChild(createMessageElement(text, member));
-        if (wasTop) {
-            el.scrollTop = el.scrollHeight - el.clientHeight;
-        }
-    }
-
-    function addSystemMessage(text) {
-        addMessageToListDOM(text, { clientData: { username: 'System' } });
-    }
-</script>
-<script>
-    function handleCommand(text) {
-        const args = text.split(' ');
-        const command = args[0].toLowerCase();
-        const isAdmin = currentUser === 'lakshinh';
-
-        if (!isAdmin) {
-            addSystemMessage('You do not have permission to use commands.');
-            return;
-        }
-
-        switch(command) {
-            case '/help':
-                const helpText = Object.entries(commands)
-                    .map(([cmd, desc]) => `${cmd} - ${desc}`)
-                    .join('\n');
-                addSystemMessage(helpText);
-                break;
-
-            case '/timeout':
-                const targetTimeout = args[1];
-                const timeStr = args.slice(2).join('');
-                const duration = parseTimeString(timeStr);
-                
-                if (!targetTimeout || !duration) {
-                    addSystemMessage('Usage: /timeout username [duration] (e.g., 1d, 1hr20m, 20m, 20s)');
-                    return;
-                }
-                
-                if (targetTimeout === 'lakshinh') {
-                    addSystemMessage('Cannot timeout the admin!');
-                    return;
-                }
-
-                drone.publish({
-                    room: 'observable-room',
-                    message: { 
-                        type: 'command', 
-                        command: 'timeout', 
-                        target: targetTimeout,
-                        duration: duration
-                    }
-                });
-                break;
-
-            case '/ban':
-                const targetBan = args[1];
-                if (targetBan && targetBan !== 'lakshinh') {
-                    drone.publish({
-                        room: 'observable-room',
-                        message: { type: 'command', command: 'ban', target: targetBan }
-                    });
-                }
-                break;
-
-            case '/unban':
-                const targetUnban = args[1];
-                if (targetUnban) {
-                    drone.publish({
-                        room: 'observable-room',
-                        message: { type: 'command', command: 'unban', target: targetUnban }
-                    });
-                }
-                break;
-
-            case '/untimeout':
-                const targetUntimeout = args[1];
-                if (targetUntimeout) {
-                    drone.publish({
-                        room: 'observable-room',
-                        message: { type: 'command', command: 'untimeout', target: targetUntimeout }
-                    });
-                }
-                break;
-
-            case '/clear':
-                chatHistory = [];
-                localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
-                drone.publish({
-                    room: 'observable-room',
-                    message: { type: 'command', command: 'clear' }
-                });
-                break;
-
-            case '/announce':
-                const announcement = args.slice(1).join(' ');
-                if (announcement) {
-                    drone.publish({
-                        room: 'observable-room',
-                        message: { type: 'command', command: 'announce', text: announcement }
-                    });
-                }
-                break;
-        }
-    }
-
-    function handleRemoteCommand(data, member) {
-        const isAdmin = member.clientData.username === 'lakshinh';
-        if (!isAdmin) return;
-
-        switch(data.command) {
-            case 'timeout':
-                if (data.target && data.duration) {
-                    const expiry = Date.now() + data.duration;
-                    timedOutUsers.set(data.target, expiry);
-                    localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
-                    const formattedDuration = formatRemainingTime(data.duration);
-                    addSystemMessage(`${data.target} has been timed out for ${formattedDuration}`);
-                    if (currentUser === data.target) {
-                        window.location.reload();
-                    }
-                }
-                break;
-
-            case 'ban':
-                if (data.target) {
-                    bannedUsers.add(data.target);
-                    localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
-                    addSystemMessage(`${data.target} has been banned`);
-                    if (currentUser === data.target) {
-                        window.location.reload();
-                    }
-                }
-                break;
-
-            case 'unban':
-                if (data.target) {
-                    bannedUsers.delete(data.target);
-                    localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
-                    addSystemMessage(`${data.target} has been unbanned`);
-                }
-                break;
-
-            case 'untimeout':
-                if (data.target) {
-                    timedOutUsers.delete(data.target);
-                    localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
-                    addSystemMessage(`${data.target} has been untimed out`);
-                }
-                break;
-
-            case 'clear':
-                DOM.messages.innerHTML = '';
-                addSystemMessage('Chat cleared by admin');
-                break;
-
-            case 'announce':
-                if (data.text) {
-                    addSystemMessage(`Announcement: ${data.text}`);
-                }
-                break;
-        }
-    }
-
-    function showCommandList() {
-        const commandList = DOM.commandList;
-        commandList.innerHTML = '';
-        Object.keys(commands).forEach(cmd => {
-            const item = document.createElement('div');
-            item.className = 'command-list__item';
-            item.textContent = cmd;
-            item.onclick = () => {
-                DOM.input.value = cmd + ' ';
-                commandList.style.display = 'none';
-                DOM.input.focus();
-            };
-            commandList.appendChild(item);
+        room.on('members', m => {
+            members = m;
+            updateMembersDOM();
         });
-        commandList.style.display = 'block';
-    }
 
-    function showUserList() {
-        const userList = DOM.userList;
-        userList.innerHTML = '';
-        members.forEach(member => {
-            const item = document.createElement('div');
-            item.className = 'user-list__item';
-            item.textContent = `@${member.clientData.username}`;
-            item.onclick = () => {
-                DOM.input.value += `${item.textContent} `;
-                userList.style.display = 'none';
-                DOM.input.focus();
-            };
-            userList.appendChild(item);
+        room.on('member_join', member => {
+            members.push(member);
+            updateMembersDOM();
         });
-        userList.style.display = 'block';
-    }
 
-    DOM.input.addEventListener('input', (e) => {
-        const value = e.target.value.trim();
-        if (value === '/') {
-            showCommandList();
-        } else if (value.endsWith('@')) {
-            showUserList();
-        } else {
-            DOM.commandList.style.display = 'none';
-            DOM.userList.style.display = 'none';
-        }
+        room.on('member_leave', ({id}) => {
+            const index = members.findIndex(member => member.id === id);
+            members.splice(index, 1);
+            updateMembersDOM();
+        });
+
+        room.on('data', (text, member) => {
+            if (member) {
+                if (text.type === 'command') {
+                    handleRemoteCommand(text, member);
+                } else {
+                    addMessageToListDOM(text, member);
+                    addToHistory(text, member);
+                    
+                    if (text.includes(`@${currentUser}`) || text.includes('@everyone')) {
+                        notifyUser(text, member.clientData.username);
+                    }
+                }
+            }
+        });
     });
+}
 
-    DOM.form.addEventListener('submit', () => {
-        const value = DOM.input.value.trim();
-        if (value === '') return;
-        
-        if (value.startsWith('/')) {
-            handleCommand(value);
-        } else {
+function notifyUser(message, fromUser) {
+    if (Notification.permission === "granted") {
+        new Notification(`${fromUser} mentioned you`, {
+            body: message
+        });
+    }
+}
+
+function getRandomColor() {
+    return '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16);
+}
+
+function createMemberElement(member) {
+    const el = document.createElement('div');
+    el.appendChild(document.createTextNode(member.clientData.username));
+    el.className = 'member';
+    el.style.color = member.clientData.color;
+    return el;
+}
+
+function updateMembersDOM() {
+    DOM.membersCount.innerText = `${members.length} users in room:`;
+    DOM.membersList.innerHTML = '';
+    members.forEach(member =>
+        DOM.membersList.appendChild(createMemberElement(member))
+    );
+}
+
+function createMessageElement(text, member) {
+    const timeStr = getFormattedTime();
+    const el = document.createElement('div');
+    el.className = member.clientData.username === 'lakshinh' ? 'message admin-message' : 'message';
+    el.innerHTML = `<strong>${member.clientData.username}${member.clientData.username === 'lakshinh' ? ' 👑' : ''}</strong> (${timeStr}): ${text}`;
+    el.dataset.username = member.clientData.username;
+
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+    
+    const replyButton = document.createElement('button');
+    replyButton.textContent = 'Reply';
+    replyButton.onclick = () => {
+        DOM.input.value = `@${member.clientData.username} `;
+        DOM.input.focus();
+    };
+    actions.appendChild(replyButton);
+
+    if (currentUser === 'lakshinh') {
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = 'Delete';
+        deleteButton.onclick = () => {
+            el.remove();
+            removeFromHistory(text, member);
+        };
+        actions.appendChild(deleteButton);
+    }
+
+    el.appendChild(actions);
+    return el;
+}
+
+function addMessageToListDOM(text, member) {
+    const el = DOM.messages;
+    const wasTop = el.scrollTop === el.scrollHeight - el.clientHeight;
+    el.appendChild(createMessageElement(text, member));
+    if (wasTop) {
+        el.scrollTop = el.scrollHeight - el.clientHeight;
+    }
+}
+
+function addSystemMessage(text) {
+    addMessageToListDOM(text, { clientData: { username: 'System' } });
+}
+
+function removeFromHistory(text, member) {
+    chatHistory = chatHistory.filter(msg => !(msg.text === text && msg.username === member.clientData.username));
+    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
+}
+function handleCommand(text) {
+    const args = text.split(' ');
+    const command = args[0].toLowerCase();
+    const isAdmin = currentUser === 'lakshinh';
+
+    if (!isAdmin) {
+        addSystemMessage('You do not have permission to use commands.');
+        return;
+    }
+
+    switch(command) {
+        case '/help':
+            const helpText = Object.entries(commands)
+                .map(([cmd, desc]) => `${cmd} - ${desc}`)
+                .join('\n');
+            addSystemMessage(helpText);
+            break;
+
+        case '/timeout':
+            const targetTimeout = args[1];
+            const timeStr = args.slice(2).join('');
+            const duration = parseTimeString(timeStr);
+            
+            if (!targetTimeout || !duration) {
+                addSystemMessage('Usage: /timeout username [duration] (e.g., 1d, 1hr20m, 20m, 20s)');
+                return;
+            }
+            
+            if (targetTimeout === 'lakshinh') {
+                addSystemMessage('Cannot timeout the admin!');
+                return;
+            }
+
             drone.publish({
                 room: 'observable-room',
-                message: value
+                message: { 
+                    type: 'command', 
+                    command: 'timeout', 
+                    target: targetTimeout,
+                    duration: duration
+                }
             });
-        }
-        DOM.input.value = '';
+            break;
+
+        case '/ban':
+            const targetBan = args[1];
+            if (targetBan && targetBan !== 'lakshinh') {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'ban', target: targetBan }
+                });
+            }
+            break;
+
+        case '/unban':
+            const targetUnban = args[1];
+            if (targetUnban) {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'unban', target: targetUnban }
+                });
+            }
+            break;
+
+        case '/untimeout':
+            const targetUntimeout = args[1];
+            if (targetUntimeout) {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'untimeout', target: targetUntimeout }
+                });
+            }
+            break;
+
+        case '/clear':
+            chatHistory = [];
+            localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
+            drone.publish({
+                room: 'observable-room',
+                message: { type: 'command', command: 'clear' }
+            });
+            break;
+
+        case '/announce':
+            const announcement = args.slice(1).join(' ');
+            if (announcement) {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'announce', text: announcement }
+                });
+            }
+            break;
+
+        case '/everyone':
+            const mention = args.slice(1).join(' ');
+            if (mention) {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'mention', text: mention }
+                });
+            }
+            break;
+    }
+}
+
+function handleRemoteCommand(data, member) {
+    const isAdmin = member.clientData.username === 'lakshinh';
+    if (!isAdmin) return;
+
+    switch(data.command) {
+        case 'timeout':
+            if (data.target && data.duration) {
+                const expiry = Date.now() + data.duration;
+                timedOutUsers.set(data.target, expiry);
+                localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
+                const formattedDuration = formatRemainingTime(data.duration);
+                addSystemMessage(`${data.target} has been timed out for ${formattedDuration}`);
+                if (currentUser === data.target) {
+                    window.location.reload();
+                }
+            }
+            break;
+
+        case 'ban':
+            if (data.target) {
+                bannedUsers.add(data.target);
+                localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
+                addSystemMessage(`${data.target} has been banned`);
+                if (currentUser === data.target) {
+                    window.location.reload();
+                }
+            }
+            break;
+
+        case 'unban':
+            if (data.target) {
+                bannedUsers.delete(data.target);
+                localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
+                addSystemMessage(`${data.target} has been unbanned`);
+            }
+            break;
+
+        case 'untimeout':
+            if (data.target) {
+                timedOutUsers.delete(data.target);
+                localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
+                addSystemMessage(`${data.target} has been untimed out`);
+            }
+            break;
+
+        case 'clear':
+            DOM.messages.innerHTML = '';
+            addSystemMessage('Chat cleared by admin');
+            break;
+
+        case 'announce':
+            if (data.text) {
+                addSystemMessage(`Announcement: ${data.text}`);
+            }
+            break;
+
+        case 'mention':
+            if (data.text) {
+                addSystemMessage(`@everyone: ${data.text}`);
+            }
+            break;
+    }
+}
+
+function showCommandList() {
+    const commandList = DOM.commandList;
+    commandList.innerHTML = '';
+    Object.keys(commands).forEach(cmd => {
+        const item = document.createElement('div');
+        item.className = 'command-list__item';
+        item.textContent = cmd;
+        item.onclick = () => {
+            DOM.input.value = cmd + ' ';
+            commandList.style.display = 'none';
+            DOM.input.focus();
+        };
+        commandList.appendChild(item);
     });
+    commandList.style.display = 'block';
+}
+
+function showUserList() {
+    const userList = DOM.userList;
+    userList.innerHTML = '';
+    members.forEach(member => {
+        const item = document.createElement('div');
+        item.className = 'user-list__item';
+        item.textContent = `@${member.clientData.username}`;
+        item.onclick = () => {
+            DOM.input.value += `${item.textContent} `;
+            userList.style.display = 'none';
+            DOM.input.focus();
+        };
+        userList.appendChild(item);
+    });
+    userList.style.display = 'block';
+}
+
+DOM.input.addEventListener('input', (e) => {
+    const value = e.target.value.trim();
+    if (value === '/') {
+        showCommandList();
+    } else if (value.endsWith('@')) {
+        showUserList();
+    } else {
+        DOM.commandList.style.display = 'none';
+        DOM.userList.style.display = 'none';
+    }
+});
+
+DOM.form.addEventListener('submit', () => {
+    const value = DOM.input.value.trim();
+    if (value === '') return;
+    
+    if (value.startsWith('/')) {
+        handleCommand(value);
+    } else {
+        drone.publish({
+            room: 'observable-room',
+            message: value
+        });
+    }
+    DOM.input.value = '';
+});
+async function handleRemoteCommand(data, member) {
+    const isAdmin = member.clientData.username === 'lakshinh';
+    if (!isAdmin) return;
+
+    switch (data.command) {
+        case 'timeout':
+            if (data.target && data.duration) {
+                const expiry = Date.now() + data.duration;
+                timedOutUsers.set(data.target, expiry);
+                localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
+                const formattedDuration = formatRemainingTime(data.duration);
+                addSystemMessage(`${data.target} has been timed out for ${formattedDuration}`);
+                if (currentUser === data.target) {
+                    window.location.reload();
+                }
+            }
+            break;
+
+        case 'ban':
+            if (data.target) {
+                bannedUsers.add(data.target);
+                localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
+                addSystemMessage(`${data.target} has been banned`);
+                if (currentUser === data.target) {
+                    window.location.reload();
+                }
+            }
+            break;
+
+        case 'unban':
+            if (data.target) {
+                bannedUsers.delete(data.target);
+                localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
+                addSystemMessage(`${data.target} has been unbanned`);
+            }
+            break;
+
+        case 'untimeout':
+            if (data.target) {
+                timedOutUsers.delete(data.target);
+                localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
+                addSystemMessage(`${data.target} has been untimed out`);
+            }
+            break;
+
+        case 'clear':
+            DOM.messages.innerHTML = '';
+            addSystemMessage('Chat cleared by admin');
+            break;
+
+        case 'announce':
+            if (data.text) {
+                addSystemMessage(`Announcement: ${data.text}`);
+            }
+            break;
+
+        case 'mention':
+            if (data.text) {
+                addSystemMessage(`@everyone: ${data.text}`);
+            }
+            break;
+    }
+}
+
+async function showCommandList() {
+    const commandList = DOM.commandList;
+    commandList.innerHTML = '';
+    Object.keys(commands).forEach(cmd => {
+        const item = document.createElement('div');
+        item.className = 'command-list__item';
+        item.textContent = cmd;
+        item.onclick = () => {
+            DOM.input.value = cmd + ' ';
+            commandList.style.display = 'none';
+            DOM.input.focus();
+        };
+        commandList.appendChild(item);
+    });
+    commandList.style.display = 'block';
+}
+
+async function showUserList() {
+    const userList = DOM.userList;
+    userList.innerHTML = '';
+    members.forEach(member => {
+        const item = document.createElement('div');
+        item.className = 'user-list__item';
+        item.textContent = `@${member.clientData.username}`;
+        item.onclick = () => {
+            DOM.input.value += `${item.textContent} `;
+            userList.style.display = 'none';
+            DOM.input.focus();
+        };
+        userList.appendChild(item);
+    });
+    userList.style.display = 'block';
+}
+
+DOM.input.addEventListener('input', (e) => {
+    const value = e.target.value.trim();
+    if (value === '/') {
+        showCommandList();
+    } else if (value.endsWith('@')) {
+        showUserList();
+    } else {
+        DOM.commandList.style.display = 'none';
+        DOM.userList.style.display = 'none';
+    }
+});
+
+DOM.form.addEventListener('submit', () => {
+    const value = DOM.input.value.trim();
+    if (value === '') return;
+
+    if (value.startsWith('/')) {
+        handleCommand(value);
+    } else {
+        drone.publish({
+            room: 'observable-room',
+            message: value
+        });
+    }
+    DOM.input.value = '';
+});
+function handleCommand(text) {
+    const args = text.split(' ');
+    const command = args[0].toLowerCase();
+    const isAdmin = currentUser === 'lakshinh';
+
+    if (!isAdmin) {
+        addSystemMessage('You do not have permission to use commands.');
+        return;
+    }
+
+    switch (command) {
+        case '/help':
+            const helpText = Object.entries(commands)
+                .map(([cmd, desc]) => `${cmd} - ${desc}`)
+                .join('\n');
+            addSystemMessage(helpText);
+            break;
+
+        case '/timeout':
+            const targetTimeout = args[1];
+            const timeStr = args.slice(2).join('');
+            const duration = parseTimeString(timeStr);
+
+            if (!targetTimeout || !duration) {
+                addSystemMessage('Usage: /timeout username [duration] (e.g., 1d, 1hr20m, 20m, 20s)');
+                return;
+            }
+
+            if (targetTimeout === 'lakshinh') {
+                addSystemMessage('Cannot timeout the admin!');
+                return;
+            }
+
+            drone.publish({
+                room: 'observable-room',
+                message: {
+                    type: 'command',
+                    command: 'timeout',
+                    target: targetTimeout,
+                    duration: duration
+                }
+            });
+            break;
+
+        case '/ban':
+            const targetBan = args[1];
+            if (targetBan && targetBan !== 'lakshinh') {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'ban', target: targetBan }
+                });
+            }
+            break;
+
+        case '/unban':
+            const targetUnban = args[1];
+            if (targetUnban) {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'unban', target: targetUnban }
+                });
+            }
+            break;
+
+        case '/untimeout':
+            const targetUntimeout = args[1];
+            if (targetUntimeout) {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'untimeout', target: targetUntimeout }
+                });
+            }
+            break;
+
+        case '/clear':
+            chatHistory = [];
+            localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
+            drone.publish({
+                room: 'observable-room',
+                message: { type: 'command', command: 'clear' }
+            });
+            break;
+
+        case '/announce':
+            const announcement = args.slice(1).join(' ');
+            if (announcement) {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'announce', text: announcement }
+                });
+            }
+            break;
+
+        case '/everyone':
+            const mention = args.slice(1).join(' ');
+            if (mention) {
+                drone.publish({
+                    room: 'observable-room',
+                    message: { type: 'command', command: 'mention', text: mention }
+                });
+            }
+            break;
+    }
+}
+
+async function handleRemoteCommand(data, member) {
+    const isAdmin = member.clientData.username === 'lakshinh';
+    if (!isAdmin) return;
+
+    switch (data.command) {
+        case 'timeout':
+            if (data.target && data.duration) {
+                const expiry = Date.now() + data.duration;
+                timedOutUsers.set(data.target, expiry);
+                localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
+                const formattedDuration = formatRemainingTime(data.duration);
+                addSystemMessage(`${data.target} has been timed out for ${formattedDuration}`);
+                if (currentUser === data.target) {
+                    window.location.reload();
+                }
+            }
+            break;
+
+        case 'ban':
+            if (data.target) {
+                bannedUsers.add(data.target);
+                localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
+                addSystemMessage(`${data.target} has been banned`);
+                if (currentUser === data.target) {
+                    window.location.reload();
+                }
+            }
+            break;
+
+        case 'unban':
+            if (data.target) {
+                bannedUsers.delete(data.target);
+                localStorage.setItem('bannedUsers', JSON.stringify([...bannedUsers]));
+                addSystemMessage(`${data.target} has been unbanned`);
+            }
+            break;
+
+        case 'untimeout':
+            if (data.target) {
+                timedOutUsers.delete(data.target);
+                localStorage.setItem('timedOutUsers', JSON.stringify([...timedOutUsers]));
+                addSystemMessage(`${data.target} has been untimed out`);
+            }
+            break;
+
+        case 'clear':
+            DOM.messages.innerHTML = '';
+            addSystemMessage('Chat cleared by admin');
+            break;
+
+        case 'announce':
+            if (data.text) {
+                addSystemMessage(`Announcement: ${data.text}`);
+            }
+            break;
+
+        case 'mention':
+            if (data.text) {
+                addSystemMessage(`@everyone: ${data.text}`);
+            }
+            break;
+    }
+}
+
+function showCommandList() {
+    const commandList = DOM.commandList;
+    commandList.innerHTML = '';
+    Object.keys(commands).forEach(cmd => {
+        const item = document.createElement('div');
+        item.className = 'command-list__item';
+        item.textContent = cmd;
+        item.onclick = () => {
+            DOM.input.value = cmd + ' ';
+            commandList.style.display = 'none';
+            DOM.input.focus();
+        };
+        commandList.appendChild(item);
+    });
+    commandList.style.display = 'block';
+}
+
+function showUserList() {
+    const userList = DOM.userList;
+    userList.innerHTML = '';
+    members.forEach(member => {
+        const item = document.createElement('div');
+        item.className = 'user-list__item';
+        item.textContent = `@${member.clientData.username}`;
+        item.onclick = () => {
+            DOM.input.value += `${item.textContent} `;
+            userList.style.display = 'none';
+            DOM.input.focus();
+        };
+        userList.appendChild(item);
+    });
+    userList.style.display = 'block';
+}
+
+DOM.input.addEventListener('input', (e) => {
+    const value = e.target.value.trim();
+    if (value === '/') {
+        showCommandList();
+    } else if (value.endsWith('@')) {
+        showUserList();
+    } else {
+        DOM.commandList.style.display = 'none';
+        DOM.userList.style.display = 'none';
+    }
+});
+
+DOM.form.addEventListener('submit', () => {
+    const value = DOM.input.value.trim();
+    if (value === '') return;
+
+    if (value.startsWith('/')) {
+        handleCommand(value);
+    } else {
+        drone.publish({
+            room: 'observable-room',
+            message: value
+        });
+    }
+    DOM.input.value = '';
+});
 </script>
+</body>
+</html>
